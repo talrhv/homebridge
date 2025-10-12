@@ -2,6 +2,8 @@ import type { Controller, Service } from 'hap-nodejs'
 
 import type { AccessoryConfig, PlatformConfig } from './bridgeService.js'
 import type { Logging } from './logger.js'
+import type { InternalMatterAccessory } from './matter/index.js'
+import type { SerializedMatterAccessory } from './matter/matterAccessoryCache.js'
 
 import { EventEmitter } from 'node:events'
 
@@ -9,6 +11,7 @@ import hapNodeJs from 'hap-nodejs'
 import semver from 'semver'
 
 import { Logger } from './logger.js'
+import { clusterNames, clusters, deviceTypes, MatterAccessory, MatterServer, MatterTypes } from './matter/index.js'
 import { PlatformAccessory } from './platformAccessory.js'
 import { PluginManager } from './pluginManager.js'
 import { User } from './user.js'
@@ -103,6 +106,17 @@ export interface DynamicPlatformPlugin extends PlatformPlugin {
    * @param {PlatformAccessory} accessory which needs to be configured
    */
   configureAccessory: (accessory: PlatformAccessory) => void
+
+  /**
+   * This method is called for every Matter accessory, which is recreated from cache on startup.
+   * It should be used to track cached accessories so the plugin can determine which accessories
+   * to re-register and which to remove (if they no longer exist in the external system).
+   *
+   * This is the Matter equivalent of configureAccessory for HAP accessories.
+   *
+   * @param {SerializedMatterAccessory} accessory - cached Matter accessory
+   */
+  configureMatterAccessory?: (accessory: SerializedMatterAccessory) => void
 }
 
 /**
@@ -156,6 +170,202 @@ export const enum InternalAPIEvent {
   REGISTER_PLATFORM_ACCESSORIES = 'registerPlatformAccessories',
   UPDATE_PLATFORM_ACCESSORIES = 'updatePlatformAccessories',
   UNREGISTER_PLATFORM_ACCESSORIES = 'unregisterPlatformAccessories',
+
+  // Matter events (matching HAP pattern)
+  PUBLISH_EXTERNAL_MATTER_ACCESSORIES = 'publishExternalMatterAccessories',
+  REGISTER_MATTER_PLATFORM_ACCESSORIES = 'registerMatterPlatformAccessories',
+  UNREGISTER_MATTER_PLATFORM_ACCESSORIES = 'unregisterMatterPlatformAccessories',
+  UPDATE_MATTER_ACCESSORY_STATE = 'updateMatterAccessoryState',
+}
+
+/**
+ * Matter API Interface
+ * Provides access to Matter protocol functionality for creating Matter-compatible accessories.
+ * Similar to api.hap for HomeKit Accessory Protocol.
+ *
+ * @example
+ * ```typescript
+ * // Register a Matter accessory
+ * api.matter.registerAccessory({
+ *   uuid: api.matter.uuid.generate('my-light-unique-id'),
+ *   displayName: 'Living Room Light',
+ *   deviceType: api.matter.deviceTypes.OnOffLight,
+ *   // ...
+ * })
+ *
+ * // Update state when device changes externally
+ * api.matter.updateAccessoryState(uuid, api.matter.clusterNames.OnOff, { onOff: true })
+ *
+ * // Read current state
+ * const state = api.matter.getAccessoryState(uuid, api.matter.clusterNames.OnOff)
+ * ```
+ */
+export interface MatterAPI {
+  /**
+   * UUID generator (alias of api.hap.uuid for convenience)
+   * Use this to generate unique identifiers for Matter accessories
+   *
+   * @example
+   * ```typescript
+   * const uuid = api.matter.uuid.generate('my-light-unique-id')
+   * api.matter.registerAccessory({
+   *   uuid,
+   *   displayName: 'Living Room Light',
+   *   // ...
+   * })
+   * ```
+   */
+  readonly uuid: HAP['uuid']
+
+  /**
+   * Matter device types for creating accessories
+   * Maps friendly names to Matter.js device types
+   */
+  readonly deviceTypes: typeof deviceTypes
+
+  /**
+   * Matter clusters - Direct access to Matter.js cluster definitions
+   * For advanced use cases requiring low-level cluster access
+   */
+  readonly clusters: typeof clusters
+
+  /**
+   * Matter cluster names for type safety and autocomplete
+   * Use these constants with updateAccessoryState() and getAccessoryState()
+   *
+   * @example
+   * ```typescript
+   * api.matter.updateAccessoryState(uuid, api.matter.clusterNames.OnOff, { onOff: true })
+   * api.matter.getAccessoryState(uuid, api.matter.clusterNames.LevelControl)
+   * ```
+   */
+  readonly clusterNames: typeof clusterNames
+
+  /**
+   * Matter types - Access to Matter.js cluster type definitions and enums
+   * Use these for type-safe attribute values (modes, states, etc.)
+   *
+   * @example
+   * ```typescript
+   * // Fan mode enum
+   * api.matter.updateAccessoryState(
+   *   uuid,
+   *   api.matter.clusterNames.FanControl,
+   *   { fanMode: api.matter.types.FanControl.FanMode.High }
+   * )
+   * ```
+   */
+  readonly types: typeof MatterTypes
+
+  /**
+   * Register Matter platform accessories (works exactly like HAP's registerPlatformAccessories)
+   *
+   * @param pluginIdentifier - The plugin identifier (e.g., 'homebridge-example')
+   * @param platformName - The platform name (e.g., 'ExamplePlatform')
+   * @param accessories - Array of Matter accessories to register
+   */
+  registerPlatformAccessories: (pluginIdentifier: PluginIdentifier, platformName: PlatformName, accessories: MatterAccessory[]) => void
+
+  /**
+   * Unregister Matter platform accessories by UUID
+   * @param pluginIdentifier - The plugin identifier
+   * @param platformName - The platform name
+   * @param accessories - Array of Matter accessories to unregister (only uuid is required)
+   */
+  unregisterPlatformAccessories: (pluginIdentifier: PluginIdentifier, platformName: PlatformName, accessories: MatterAccessory[]) => void
+
+  /**
+   * Publish external Matter accessories on their own dedicated Matter bridge
+   *
+   * Use this for devices that require isolation from other Matter accessories.
+   * Each external accessory gets its own Matter server instance on a separate port.
+   *
+   * Apple Home requires certain device types (like Robotic Vacuum Cleaners) to be
+   * on their own bridge. Use this method for those devices.
+   *
+   * Similar to api.publishExternalAccessories() for HAP accessories.
+   *
+   * @param pluginIdentifier - The plugin identifier (e.g., 'homebridge-example')
+   * @param accessories - Array of Matter accessories to publish externally
+   */
+  publishExternalAccessories: (pluginIdentifier: PluginIdentifier, accessories: MatterAccessory[]) => void
+
+  /**
+   * Update a Matter accessory's cluster state when device changes externally
+   *
+   * Use this for state updates from:
+   * - Native app controls
+   * - Physical button presses
+   * - Webhooks from cloud service
+   * - Polling results
+   *
+   * DO NOT use inside handlers - state auto-updates after handlers complete!
+   * Similar to HAP's characteristic.updateValue()
+   *
+   * @param uuid - The UUID of the accessory
+   * @param cluster - The cluster name (use api.matter.clusterNames for autocomplete)
+   * @param attributes - The attributes to update
+   * @param partId - Optional: ID of the part to update (for composed devices with multiple endpoints)
+   *
+   * @example
+   * ```typescript
+   * // Device turned on via native app:
+   * api.matter.updateAccessoryState(
+   *   uuid,
+   *   api.matter.clusterNames.OnOff,
+   *   { onOff: true }
+   * )
+   *
+   * // Device brightness changed via physical button:
+   * api.matter.updateAccessoryState(
+   *   uuid,
+   *   api.matter.clusterNames.LevelControl,
+   *   { currentLevel: 200 }
+   * )
+   *
+   * // Update a specific outlet in a power strip (composed device):
+   * api.matter.updateAccessoryState(
+   *   uuid,
+   *   api.matter.clusterNames.OnOff,
+   *   { onOff: true },
+   *   'outlet-2' // Part ID
+   * )
+   * ```
+   */
+  updateAccessoryState: (uuid: string, cluster: string, attributes: Record<string, unknown>, partId?: string) => void
+
+  /**
+   * Get a Matter accessory's current cluster state
+   *
+   * Returns the current attribute values that are exposed to Matter controllers.
+   * Useful for:
+   * - Reading state after plugin restart
+   * - Verifying current state before making changes
+   * - Debugging and logging
+   *
+   * Similar to HAP's characteristic.value getter.
+   *
+   * @param uuid - The UUID of the accessory
+   * @param cluster - The cluster name (use api.matter.clusterNames for autocomplete)
+   * @param partId - Optional: ID of the part to get state from (for composed devices with multiple endpoints)
+   * @returns Current cluster attribute values, or undefined if not found
+   *
+   * @example
+   * ```typescript
+   * const state = api.matter.getAccessoryState(uuid, api.matter.clusterNames.OnOff)
+   * if (state?.onOff) {
+   *   console.log('Light is currently on')
+   * }
+   *
+   * // Get state of a specific outlet in a power strip:
+   * const outletState = api.matter.getAccessoryState(
+   *   uuid,
+   *   api.matter.clusterNames.OnOff,
+   *   'outlet-3' // Part ID
+   * )
+   * ```
+   */
+  getAccessoryState: (uuid: string, cluster: string, partId?: string) => Record<string, unknown> | undefined
 }
 
 export interface API {
@@ -175,6 +385,26 @@ export interface API {
   readonly hapLegacyTypes: HAPLegacyTypes // used for older accessories/platforms
   readonly platformAccessory: typeof PlatformAccessory
   // ------------------------------------------------------------------------
+
+  /**
+   * Matter Protocol API
+   * Provides access to Matter functionality, similar to api.hap for HomeKit
+   *
+   * @example
+   * ```typescript
+   * // Register a Matter accessory
+   * api.matter.registerAccessory({
+   *   uuid: api.matter.uuid.generate('my-light'),
+   *   displayName: 'Living Room Light',
+   *   deviceType: api.matter.deviceTypes.OnOffLight,
+   *   // ...
+   * })
+   *
+   * // Update state
+   * api.matter.updateAccessoryState(uuid, api.matter.clusterNames.OnOff, { onOff: true })
+   * ```
+   */
+  readonly matter: MatterAPI
 
   /**
    * Returns true if the current running homebridge version is greater or equal to the
@@ -202,14 +432,28 @@ export interface API {
 
   publishExternalAccessories: (pluginIdentifier: PluginIdentifier, accessories: PlatformAccessory[]) => void
 
+  /**
+   * Check if Matter is available in this version of Homebridge
+   * @returns true if Homebridge version is >= 2.0.0-alpha.0
+   */
+  isMatterAvailable: () => boolean
+
+  /**
+   * Check if Matter is enabled for this bridge
+   * For main bridge: returns true if Matter is enabled in `bridge.matter` config
+   * For child bridge: returns true if Matter is enabled in the _bridge.matter config
+   * @returns true if Matter is enabled
+   */
+  isMatterEnabled: () => boolean
+
   on: ((event: 'didFinishLaunching', listener: () => void) => this) & ((event: 'shutdown', listener: () => void) => this)
 }
 
 // eslint-disable-next-line ts/no-unsafe-declaration-merging
 export declare interface HomebridgeAPI {
-  on: ((event: 'didFinishLaunching', listener: () => void) => this) & ((event: 'shutdown', listener: () => void) => this) & ((event: InternalAPIEvent.REGISTER_ACCESSORY, listener: (accessoryName: AccessoryName, accessoryConstructor: AccessoryPluginConstructor, pluginIdentifier?: PluginIdentifier) => void) => this) & ((event: InternalAPIEvent.REGISTER_PLATFORM, listener: (platformName: PlatformName, platformConstructor: PlatformPluginConstructor, pluginIdentifier?: PluginIdentifier) => void) => this) & ((event: InternalAPIEvent.PUBLISH_EXTERNAL_ACCESSORIES, listener: (accessories: PlatformAccessory[]) => void) => this) & ((event: InternalAPIEvent.REGISTER_PLATFORM_ACCESSORIES, listener: (accessories: PlatformAccessory[]) => void) => this) & ((event: InternalAPIEvent.UPDATE_PLATFORM_ACCESSORIES, listener: (accessories: PlatformAccessory[]) => void) => this) & ((event: InternalAPIEvent.UNREGISTER_PLATFORM_ACCESSORIES, listener: (accessories: PlatformAccessory[]) => void) => this)
+  on: ((event: 'didFinishLaunching', listener: () => void) => this) & ((event: 'shutdown', listener: () => void) => this) & ((event: InternalAPIEvent.REGISTER_ACCESSORY, listener: (accessoryName: AccessoryName, accessoryConstructor: AccessoryPluginConstructor, pluginIdentifier?: PluginIdentifier) => void) => this) & ((event: InternalAPIEvent.REGISTER_PLATFORM, listener: (platformName: PlatformName, platformConstructor: PlatformPluginConstructor, pluginIdentifier?: PluginIdentifier) => void) => this) & ((event: InternalAPIEvent.PUBLISH_EXTERNAL_ACCESSORIES, listener: (accessories: PlatformAccessory[]) => void) => this) & ((event: InternalAPIEvent.REGISTER_PLATFORM_ACCESSORIES, listener: (accessories: PlatformAccessory[]) => void) => this) & ((event: InternalAPIEvent.UPDATE_PLATFORM_ACCESSORIES, listener: (accessories: PlatformAccessory[]) => void) => this) & ((event: InternalAPIEvent.UNREGISTER_PLATFORM_ACCESSORIES, listener: (accessories: PlatformAccessory[]) => void) => this) & ((event: InternalAPIEvent.PUBLISH_EXTERNAL_MATTER_ACCESSORIES, listener: (accessories: MatterAccessory[]) => void) => this) & ((event: InternalAPIEvent.REGISTER_MATTER_PLATFORM_ACCESSORIES, listener: (pluginIdentifier: PluginIdentifier, platformName: PlatformName, accessories: MatterAccessory[]) => void) => this) & ((event: InternalAPIEvent.UNREGISTER_MATTER_PLATFORM_ACCESSORIES, listener: (pluginIdentifier: PluginIdentifier, platformName: PlatformName, accessories: MatterAccessory[]) => void) => this) & ((event: InternalAPIEvent.UPDATE_MATTER_ACCESSORY_STATE, listener: (uuid: string, cluster: string, attributes: Record<string, any>, partId?: string) => void) => this)
 
-  emit: ((event: 'didFinishLaunching') => boolean) & ((event: 'shutdown') => boolean) & ((event: InternalAPIEvent.REGISTER_ACCESSORY, accessoryName: AccessoryName, accessoryConstructor: AccessoryPluginConstructor, pluginIdentifier?: PluginIdentifier) => boolean) & ((event: InternalAPIEvent.REGISTER_PLATFORM, platformName: PlatformName, platformConstructor: PlatformPluginConstructor, pluginIdentifier?: PluginIdentifier) => boolean) & ((event: InternalAPIEvent.PUBLISH_EXTERNAL_ACCESSORIES, accessories: PlatformAccessory[]) => boolean) & ((event: InternalAPIEvent.REGISTER_PLATFORM_ACCESSORIES, accessories: PlatformAccessory[]) => boolean) & ((event: InternalAPIEvent.UPDATE_PLATFORM_ACCESSORIES, accessories: PlatformAccessory[]) => boolean) & ((event: InternalAPIEvent.UNREGISTER_PLATFORM_ACCESSORIES, accessories: PlatformAccessory[]) => boolean)
+  emit: ((event: 'didFinishLaunching') => boolean) & ((event: 'shutdown') => boolean) & ((event: InternalAPIEvent.REGISTER_ACCESSORY, accessoryName: AccessoryName, accessoryConstructor: AccessoryPluginConstructor, pluginIdentifier?: PluginIdentifier) => boolean) & ((event: InternalAPIEvent.REGISTER_PLATFORM, platformName: PlatformName, platformConstructor: PlatformPluginConstructor, pluginIdentifier?: PluginIdentifier) => boolean) & ((event: InternalAPIEvent.PUBLISH_EXTERNAL_ACCESSORIES, accessories: PlatformAccessory[]) => boolean) & ((event: InternalAPIEvent.REGISTER_PLATFORM_ACCESSORIES, accessories: PlatformAccessory[]) => boolean) & ((event: InternalAPIEvent.UPDATE_PLATFORM_ACCESSORIES, accessories: PlatformAccessory[]) => boolean) & ((event: InternalAPIEvent.UNREGISTER_PLATFORM_ACCESSORIES, accessories: PlatformAccessory[]) => boolean) & ((event: InternalAPIEvent.PUBLISH_EXTERNAL_MATTER_ACCESSORIES, accessories: MatterAccessory[]) => boolean) & ((event: InternalAPIEvent.REGISTER_MATTER_PLATFORM_ACCESSORIES, pluginIdentifier: PluginIdentifier, platformName: PlatformName, accessories: MatterAccessory[]) => boolean) & ((event: InternalAPIEvent.UNREGISTER_MATTER_PLATFORM_ACCESSORIES, pluginIdentifier: PluginIdentifier, platformName: PlatformName, accessories: MatterAccessory[]) => boolean) & ((event: InternalAPIEvent.UPDATE_MATTER_ACCESSORY_STATE, uuid: string, cluster: string, attributes: Record<string, any>, partId?: string) => boolean)
 }
 
 // eslint-disable-next-line ts/no-unsafe-declaration-merging
@@ -224,8 +468,86 @@ export class HomebridgeAPI extends EventEmitter implements API {
   readonly platformAccessory = PlatformAccessory
   // ------------------------------------------------------------------------
 
+  /**
+   * Matter Protocol API
+   */
+  public readonly matter: MatterAPI
+
+  /**
+   * Internal state tracking whether Matter is enabled for this bridge
+   */
+  private matterEnabled = false
+
+  /**
+   * Internal reference to MatterServer for API methods that need return values
+   * @internal
+   */
+  private _matterServer: MatterServer | null = null
+
   constructor() {
     super()
+
+    // Initialize Matter API (just like HAP)
+    this.matter = {
+      uuid: this.hap.uuid,
+      deviceTypes,
+      clusters,
+      clusterNames,
+      types: MatterTypes,
+      registerPlatformAccessories: (pluginIdentifier, platformName, accessories) => {
+        // Add plugin/platform association to accessories
+        accessories.forEach((accessory) => {
+          const internal = accessory as InternalMatterAccessory
+          internal._associatedPlugin = pluginIdentifier
+          internal._associatedPlatform = platformName
+        })
+        this.emit(InternalAPIEvent.REGISTER_MATTER_PLATFORM_ACCESSORIES, pluginIdentifier, platformName, accessories)
+      },
+      unregisterPlatformAccessories: (pluginIdentifier, platformName, accessories) => {
+        this.emit(InternalAPIEvent.UNREGISTER_MATTER_PLATFORM_ACCESSORIES, pluginIdentifier, platformName, accessories)
+      },
+      publishExternalAccessories: (pluginIdentifier, accessories) => {
+        if (!PluginManager.isQualifiedPluginIdentifier(pluginIdentifier)) {
+          log.info(`One of your plugins incorrectly registered an external Matter accessory using the platform name (${pluginIdentifier}) and not the plugin identifier. Please report this to the developer!`)
+        }
+
+        // Add plugin association to accessories
+        accessories.forEach((accessory) => {
+          const internal = accessory as InternalMatterAccessory
+          internal._associatedPlugin = pluginIdentifier
+        })
+
+        this.emit(InternalAPIEvent.PUBLISH_EXTERNAL_MATTER_ACCESSORIES, accessories)
+      },
+      updateAccessoryState: (uuid, cluster, attributes, partId) => {
+        this.emit(InternalAPIEvent.UPDATE_MATTER_ACCESSORY_STATE, uuid, cluster, attributes, partId)
+      },
+      getAccessoryState: (uuid, cluster, partId) => {
+        if (!this._matterServer) {
+          log.debug('Matter server not available for getAccessoryState')
+          return undefined
+        }
+        return this._matterServer.getAccessoryState(uuid, cluster, partId)
+      },
+    }
+  }
+
+  /**
+   * Internal method to set Matter enabled status
+   * Called by Server or ChildBridgeFork after Matter initialization
+   * @internal
+   */
+  _setMatterEnabled(enabled: boolean): void {
+    this.matterEnabled = enabled
+  }
+
+  /**
+   * Internal method to set MatterServer reference
+   * Called by Server or ChildBridgeFork after creating MatterServer
+   * @internal
+   */
+  _setMatterServer(server: MatterServer | null): void {
+    this._matterServer = server
   }
 
   public versionGreaterOrEqual(version: string): boolean {
@@ -320,5 +642,23 @@ export class HomebridgeAPI extends EventEmitter implements API {
     })
 
     this.emit(InternalAPIEvent.UNREGISTER_PLATFORM_ACCESSORIES, accessories)
+  }
+
+  /**
+   * Check if Matter is available in this version of Homebridge
+   * @returns true if Homebridge version satisfies >= 2.0.0-alpha.0
+   */
+  isMatterAvailable(): boolean {
+    return semver.gte(this.serverVersion, '2.0.0-alpha.0')
+  }
+
+  /**
+   * Check if Matter is enabled for this bridge
+   * For main bridge: returns true if Matter is enabled in `bridge.matter` config
+   * For child bridge: returns true if Matter is enabled in the `_bridge.matter` config
+   * @returns true if Matter is enabled
+   */
+  isMatterEnabled(): boolean {
+    return this.matterEnabled
   }
 }
