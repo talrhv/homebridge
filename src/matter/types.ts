@@ -43,6 +43,7 @@ import { Pm10ConcentrationMeasurement } from '@matter/main/clusters/pm10-concent
 import { Pm25ConcentrationMeasurement } from '@matter/main/clusters/pm25-concentration-measurement'
 import { RvcOperationalState } from '@matter/main/clusters/rvc-operational-state'
 import { Thermostat } from '@matter/main/clusters/thermostat'
+import { ValveConfigurationAndControl } from '@matter/main/clusters/valve-configuration-and-control'
 import { WindowCovering } from '@matter/main/clusters/window-covering'
 // Direct imports from individual device files
 import { AirQualitySensorDevice } from '@matter/main/devices/air-quality-sensor'
@@ -67,6 +68,7 @@ import { SmokeCoAlarmDevice } from '@matter/main/devices/smoke-co-alarm'
 import { TemperatureSensorDevice } from '@matter/main/devices/temperature-sensor'
 import { ThermostatDevice, ThermostatRequirements } from '@matter/main/devices/thermostat'
 import { WaterLeakDetectorDevice } from '@matter/main/devices/water-leak-detector'
+import { WaterValveDevice } from '@matter/main/devices/water-valve'
 import { WindowCoveringDevice } from '@matter/main/devices/window-covering'
 
 type BehaviorType = Behavior.Type
@@ -545,6 +547,7 @@ const devices = {
   ThermostatDevice,
   ThermostatRequirements,
   WaterLeakDetectorDevice,
+  WaterValveDevice,
   WindowCoveringDevice,
 }
 
@@ -568,6 +571,7 @@ const clusters = {
   Pm25ConcentrationMeasurement,
   RvcOperationalState,
   Thermostat,
+  ValveConfigurationAndControl,
   WindowCovering,
 }
 
@@ -609,6 +613,9 @@ export const deviceTypes = {
   // Security
   DoorLock: devices.DoorLockDevice,
 
+  // Valves
+  WaterValve: devices.WaterValveDevice,
+
   // Window Coverings (features will be auto-detected based on accessory attributes)
   WindowCovering: devices.WindowCoveringDevice,
 
@@ -644,6 +651,7 @@ export const clusterNames = {
   WindowCovering: 'windowCovering',
   Thermostat: 'thermostat',
   FanControl: 'fanControl',
+  ValveConfigurationAndControl: 'valveConfigurationAndControl',
 
   // Sensor Clusters
   AirQuality: 'airQuality',

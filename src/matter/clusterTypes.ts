@@ -238,6 +238,23 @@ export interface DoorLockState {
 }
 
 /**
+ * Valve Configuration and Control cluster state
+ */
+export interface ValveConfigurationAndControlState {
+  openDuration?: number | null
+  defaultOpenDuration?: number | null
+  remainingDuration?: number | null
+  currentState?: number | null
+  targetState?: number | null
+  autoCloseTime?: number | bigint | null
+  currentLevel?: number | null
+  targetLevel?: number | null
+  defaultOpenLevel?: number | null
+  levelStep?: number | null
+  valveFault?: Record<string, boolean> | number | null
+}
+
+/**
  * RVC (Robotic Vacuum Cleaner) Operational State
  */
 export interface RvcOperationalState {

@@ -240,6 +240,62 @@ const CLUSTER_COMMAND_MAPPINGS: Record<string, AttributeToCommandMapping> = {
   },
 
   // ============================================================================
+  // VALVE CONFIGURATION AND CONTROL
+  // ============================================================================
+
+  // Water Valve - open/close plus writable default duration
+  valveConfigurationAndControl: {
+    map: (attributes) => {
+      // Explicit command invocation via _command attribute
+      if ('_command' in attributes) {
+        const cmd = attributes._command as string
+
+        if (cmd === 'open') {
+          const args: Record<string, unknown> = {}
+          if ('openDuration' in attributes) {
+            args.openDuration = attributes.openDuration
+          }
+          return {
+            command: 'open',
+            args: Object.keys(args).length > 0 ? args : undefined,
+          }
+        }
+
+        if (cmd === 'close') {
+          return { command: 'close' }
+        }
+      }
+
+      // Default duration changes trigger the change handler automatically via attribute updates
+      if ('defaultOpenDuration' in attributes) {
+        return null
+      }
+
+      // Binary state control via targetState/currentState
+      const valveState = ('targetState' in attributes
+        ? attributes.targetState
+        : ('currentState' in attributes ? attributes.currentState : undefined)) as number | undefined
+
+      if (valveState === 1) {
+        const args: Record<string, unknown> = {}
+        if ('openDuration' in attributes) {
+          args.openDuration = attributes.openDuration
+        }
+        return {
+          command: 'open',
+          args: Object.keys(args).length > 0 ? args : undefined,
+        }
+      }
+
+      if (valveState === 0) {
+        return { command: 'close' }
+      }
+
+      return null
+    },
+  },
+
+  // ============================================================================
   // ROBOTIC VACUUM
   // ============================================================================
 

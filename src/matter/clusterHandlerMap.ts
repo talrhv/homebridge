@@ -9,7 +9,7 @@
  * so they automatically update when matter.js is bumped.
  */
 
-import type { ColorControl, DoorLock, FanControl, Identify, LevelControl, ModeBase, ServiceArea, Thermostat, WindowCovering } from '@matter/main/clusters'
+import type { ColorControl, DoorLock, FanControl, Identify, LevelControl, ModeBase, ServiceArea, Thermostat,ValveConfigurationAndControl, WindowCovering } from '@matter/main/clusters'
 
 import type { MatterCommandHandler } from './types.js'
 
@@ -125,6 +125,18 @@ export interface IdentifyHandlers {
 }
 
 /**
+ * Valve Configuration and Control cluster handler methods
+ */
+export interface ValveConfigurationAndControlHandlers {
+  open?: MatterCommandHandler<ValveConfigurationAndControl.OpenRequest>
+  close?: MatterCommandHandler
+  defaultOpenDurationChange?: MatterCommandHandler<{
+    defaultOpenDuration: number | null
+    oldDefaultOpenDuration: number | null
+  }>
+}
+
+/**
  * RvcRunMode cluster handler methods
  */
 export interface RvcRunModeHandlers {
@@ -190,6 +202,7 @@ export interface ClusterHandlerMap {
   thermostat: ThermostatHandlers
   fanControl: FanControlHandlers
   identify: IdentifyHandlers
+  valveConfigurationAndControl: ValveConfigurationAndControlHandlers
   rvcRunMode: RvcRunModeHandlers
   rvcCleanMode: RvcCleanModeHandlers
   rvcOperationalState: RvcOperationalStateHandlers

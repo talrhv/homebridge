@@ -21,6 +21,7 @@ import type {
   RvcRunModeState,
   ServiceAreaState,
   ThermostatState,
+  ValveConfigurationAndControlState,
   WindowCoveringState,
 } from './clusterTypes.js'
 
@@ -49,6 +50,7 @@ export interface ClusterStateMap {
   windowCovering: WindowCoveringState
   thermostat: ThermostatState
   fanControl: FanControlState
+  valveConfigurationAndControl: ValveConfigurationAndControlState
 
   // RVC clusters
   rvcOperationalState: RvcOperationalState

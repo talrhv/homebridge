@@ -17,6 +17,7 @@ import type {
   ScenesManagement,
   ServiceArea,
   Thermostat,
+  ValveConfigurationAndControl,
   WindowCovering,
 } from '@matter/main/clusters'
 
@@ -175,6 +176,11 @@ export namespace MatterRequests {
   export type GoToTiltPercentage = WindowCovering.GoToTiltPercentageRequest
   export type GoToLiftValue = WindowCovering.GoToLiftValueRequest
   export type GoToTiltValue = WindowCovering.GoToTiltValueRequest
+
+  // ============================================================================
+  // Valve Configuration and Control Cluster (§4.6)
+  // ============================================================================
+  export type OpenValve = ValveConfigurationAndControl.OpenRequest
 
   // ============================================================================
   // Thermostat Cluster (§9.1)

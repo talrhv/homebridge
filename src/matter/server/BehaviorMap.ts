@@ -25,6 +25,7 @@ import {
   HomebridgeRvcRunModeServer,
   HomebridgeServiceAreaServer,
   HomebridgeThermostatServer,
+  HomebridgeValveConfigurationAndControlServer,
   HomebridgeWindowCoveringServer,
 } from '../behaviors/index.js'
 
@@ -52,6 +53,9 @@ export const CORE_CLUSTER_BEHAVIOR_MAP: Record<string, BehaviorType> = {
   // Climate control
   fanControl: HomebridgeFanControlServer,
   thermostat: HomebridgeThermostatServer,
+
+  // Valves
+  valveConfigurationAndControl: HomebridgeValveConfigurationAndControlServer,
 
   // Robotic vacuum cleaners
   rvcOperationalState: HomebridgeRvcOperationalStateServer,
