@@ -1,5 +1,5 @@
 {
-  "name": "homebridge",
+  "name": "homebridge-talrhv",
   "type": "module",
   "version": "2.0.0",
   "description": "HomeKit support for the impatient",
@@ -7,10 +7,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git://github.com/homebridge/homebridge.git"
+    "url": "git://github.com/talrhv/homebridge.git"
   },
   "bugs": {
-    "url": "https://github.com/homebridge/homebridge/issues"
+    "url": "https://github.com/talrhv/homebridge/issues"
   },
   "exports": "./dist/index.js",
   "main": "dist/index.js",

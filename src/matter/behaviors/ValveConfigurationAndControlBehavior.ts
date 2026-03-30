@@ -71,25 +71,6 @@ export class HomebridgeValveConfigurationAndControlServer extends ValveConfigura
       stateUpdate.targetState = currentState.targetState
     }
 
-    // Optional TimeSync feature
-    if (currentState.autoCloseTime !== undefined) {
-      stateUpdate.autoCloseTime = currentState.autoCloseTime
-    }
-
-    // Optional Level feature
-    if (currentState.currentLevel !== undefined) {
-      stateUpdate.currentLevel = currentState.currentLevel
-    }
-    if (currentState.targetLevel !== undefined) {
-      stateUpdate.targetLevel = currentState.targetLevel
-    }
-    if (currentState.defaultOpenLevel !== undefined) {
-      stateUpdate.defaultOpenLevel = currentState.defaultOpenLevel
-    }
-    if (currentState.levelStep !== undefined) {
-      stateUpdate.levelStep = currentState.levelStep
-    }
-
     // Optional fault reporting
     if (currentState.valveFault !== undefined) {
       stateUpdate.valveFault = currentState.valveFault
